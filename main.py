@@ -1087,3 +1087,1238 @@ def get_box_office(api_key, date):
 
     params = {
         "key": api_key,
+        "targetDt": date
+    }
+
+    response = requests.get(
+        API_URL,
+        params=params,
+        timeout=15
+    )
+
+    response.raise_for_status()
+
+    return response.json()
+
+
+# ============================================================
+# 8. API 요청 실행
+# ============================================================
+
+try:
+
+    data = get_box_office(
+        KOBIS_KEY,
+        target_date
+    )
+
+except requests.exceptions.Timeout:
+
+    st.error(
+        "⏰ KOBIS 서버의 응답 시간이 초과되었습니다."
+    )
+
+    st.info(
+        """
+        ### 확인할 내용
+
+        - 인터넷 연결 상태를 확인해 주세요.
+        - 잠시 후 다시 새로고침해 주세요.
+        - KOBIS 서버가 일시적으로 응답하지 않을 수도 있습니다.
+        """
+    )
+
+    st.stop()
+
+
+except requests.exceptions.ConnectionError:
+
+    st.error(
+        "🌐 KOBIS API에 연결하지 못했습니다."
+    )
+
+    st.info(
+        """
+        ### 확인할 내용
+
+        - 인터넷 연결 상태를 확인해 주세요.
+        - KOBIS API 서버가 정상적으로 작동하는지 확인해 주세요.
+        - 잠시 후 다시 실행해 주세요.
+        """
+    )
+
+    st.stop()
+
+
+except requests.exceptions.HTTPError as e:
+
+    st.error(
+        "🚨 KOBIS API에서 HTTP 오류가 발생했습니다."
+    )
+
+    st.info(
+        f"""
+        **오류 정보:** `{e}`
+
+        잠시 후 다시 실행하거나 KOBIS API 상태를 확인해 주세요.
+        """
+    )
+
+    st.stop()
+
+
+except requests.exceptions.RequestException:
+
+    st.error(
+        "⚠️ KOBIS API 요청에 실패했습니다."
+    )
+
+    st.info(
+        """
+        네트워크 연결이나 KOBIS API 상태를 확인해 주세요.
+        """
+    )
+
+    st.stop()
+
+
+except ValueError:
+
+    st.error(
+        "⚠️ KOBIS에서 올바른 JSON 데이터를 받지 못했습니다."
+    )
+
+    st.info(
+        """
+        KOBIS API가 일시적으로 정상적인 데이터를 반환하지 않았을 수 있습니다.
+        잠시 후 다시 시도해 주세요.
+        """
+    )
+
+    st.stop()
+
+
+# ============================================================
+# 9. KOBIS 자체 오류 확인
+# ============================================================
+# 중요한 부분입니다.
+#
+# KOBIS는 인증키가 틀려도 HTTP 상태코드가 200일 수 있습니다.
+# 따라서 faultInfo가 있는지 직접 확인해야 합니다.
+
+if "faultInfo" in data:
+
+    fault_info = data.get(
+        "faultInfo",
+        {}
+    )
+
+    error_code = fault_info.get(
+        "errorCode",
+        ""
+    )
+
+    error_message = fault_info.get(
+        "message",
+        "KOBIS API에서 오류가 발생했습니다."
+    )
+
+    st.error(
+        "🚨 KOBIS API에서 오류가 발생했습니다."
+    )
+
+    if error_code:
+
+        st.write(
+            f"**오류 코드:** {error_code}"
+        )
+
+    st.write(
+        f"**오류 내용:** {error_message}"
+    )
+
+    st.info(
+        """
+        ### 확인할 내용
+
+        1. Streamlit Secrets의 `KOBIS_KEY`가 정확한지 확인
+        2. 인증키 앞뒤에 불필요한 공백이 없는지 확인
+        3. KOBIS에서 발급받은 인증키가 정상적으로 활성화되어 있는지 확인
+        4. 잠시 후 다시 실행
+        """
+    )
+
+    st.stop()
+
+
+# ============================================================
+# 10. boxOfficeResult 확인
+# ============================================================
+
+if "boxOfficeResult" not in data:
+
+    st.error(
+        "⚠️ 박스오피스 데이터를 찾을 수 없습니다."
+    )
+
+    st.info(
+        """
+        KOBIS API의 응답 구조가 예상과 다릅니다.
+
+        KOBIS API가 일시적으로 오류를 반환했거나
+        API 설정에 문제가 있을 수 있습니다.
+        """
+    )
+
+    st.stop()
+
+
+box_office_result = data["boxOfficeResult"]
+
+
+# ============================================================
+# 11. 영화 목록 가져오기
+# ============================================================
+
+movie_list = box_office_result.get(
+    "dailyBoxOfficeList",
+    []
+)
+
+
+# ============================================================
+# 12. 영화 목록이 비어 있을 때
+# ============================================================
+
+if not movie_list:
+
+    st.warning(
+        "🎬 해당 날짜의 박스오피스 영화 목록이 없습니다."
+    )
+
+    st.info(
+        f"""
+        ### 확인할 내용
+
+        **조회 날짜:** {display_date}
+
+        - KOBIS에서 해당 날짜의 데이터가 아직 제공되지 않았을 수 있습니다.
+        - KOBIS API가 정상적으로 데이터를 반환하는지 확인해 주세요.
+        - 인증키가 정상적으로 등록되어 있는지도 확인해 주세요.
+        - 잠시 후 다시 실행해 보세요.
+        """
+    )
+
+    st.stop()
+
+
+# ============================================================
+# 13. 데이터를 DataFrame으로 변환
+# ============================================================
+
+rows = []
+
+
+for movie in movie_list:
+
+    # 숫자가 문자열로 오기 때문에 int로 변환합니다.
+    try:
+        rank = int(movie.get("rank", 0))
+    except:
+        rank = 0
+
+    try:
+        rank_inten = int(movie.get("rankInten", 0))
+    except:
+        rank_inten = 0
+
+    try:
+        audi_cnt = int(movie.get("audiCnt", 0))
+    except:
+        audi_cnt = 0
+
+    try:
+        audi_acc = int(movie.get("audiAcc", 0))
+    except:
+        audi_acc = 0
+
+    try:
+        scrn_cnt = int(movie.get("scrnCnt", 0))
+    except:
+        scrn_cnt = 0
+
+    try:
+        show_cnt = int(movie.get("showCnt", 0))
+    except:
+        show_cnt = 0
+
+    rows.append(
+        {
+            "순위": rank,
+            "순위변동": rank_inten,
+            "영화명": movie.get(
+                "movieNm",
+                "-"
+            ),
+            "개봉일": movie.get(
+                "openDt",
+                "-"
+            ),
+            "관객수": audi_cnt,
+            "누적관객": audi_acc,
+            "스크린수": scrn_cnt,
+            "상영횟수": show_cnt
+        }
+    )
+
+
+df = pd.DataFrame(rows)
+
+
+# ============================================================
+# 14. 데이터가 만들어지지 않았을 때
+# ============================================================
+
+if df.empty:
+
+    st.warning(
+        "🎬 영화 데이터가 비어 있습니다."
+    )
+
+    st.info(
+        """
+        KOBIS에서 영화 목록을 받았지만
+        화면에 표시할 데이터가 없습니다.
+
+        잠시 후 다시 실행하거나 KOBIS API 응답을 확인해 주세요.
+        """
+    )
+
+    st.stop()
+
+
+# ============================================================
+# 15. 숫자 표시 함수
+# ============================================================
+
+def format_number(value):
+
+    return f"{int(value):,}"
+
+
+# ============================================================
+# 16. 순위 변동 표시 함수
+# ============================================================
+
+def rank_change(value):
+
+    value = int(value)
+
+    if value > 0:
+
+        return f"▲ {value}"
+
+    elif value < 0:
+
+        return f"▼ {abs(value)}"
+
+    else:
+
+        return "━"
+
+
+# ============================================================
+# 17. 토마토 평점 세션 만들기
+# ============================================================
+# KOBIS에는 평점 정보가 없기 때문에
+# 사용자가 직접 남기는 개인 평점을 저장합니다.
+#
+# 새로고침하면 초기화될 수 있습니다.
+# 데이터 자체를 임의로 생성하지 않습니다.
+
+if "tomato_ratings" not in st.session_state:
+
+    st.session_state.tomato_ratings = {}
+
+
+# ============================================================
+# 18. 토마토 아이콘 표시 함수
+# ============================================================
+
+def tomato_display(rating):
+
+    if rating is None:
+
+        return "평점 없음"
+
+    # 0.5 단위이므로
+    # 전체 토마토 수를 계산합니다.
+    full = int(rating)
+
+    half = 1 if rating - full >= 0.5 else 0
+
+    empty = 5 - full - half
+
+    result = ""
+
+    result += "🍅" * full
+
+    if half:
+
+        result += "🍅"
+
+    result += "🤍" * empty
+
+    return result
+
+
+# ============================================================
+# 19. 현재 1위 영화
+# ============================================================
+
+first_movie = df.iloc[0]
+
+first_movie_name = first_movie["영화명"]
+
+first_rating = st.session_state.tomato_ratings.get(
+    first_movie_name,
+    None
+)
+
+
+# ============================================================
+# 20. 1위 영화 + TOP5 영역
+# ============================================================
+
+left_col, right_col = st.columns(
+    [1.25, 1],
+    gap="large"
+)
+
+
+# ============================================================
+# 왼쪽 : 1위 영화
+# ============================================================
+
+with left_col:
+
+    st.markdown(
+        """
+        <div class="film-frame">
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <div class="rank-one-label">
+
+            <span class="rank-one-badge">
+                1
+            </span>
+
+            현재 박스오피스 1위
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        f"""
+        <div class="movie-title">
+            {html.escape(first_movie_name)}
+        </div>
+
+        <div class="movie-date">
+            개봉일 · {html.escape(str(first_movie["개봉일"]))}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    # --------------------------------------------------------
+    # 1위 영화의 주요 지표
+    # --------------------------------------------------------
+
+    m1, m2, m3 = st.columns(3)
+
+
+    with m1:
+
+        st.markdown(
+            f"""
+            <div class="metric-card">
+
+                <div class="metric-icon">
+                    👥
+                </div>
+
+                <div class="metric-label">
+                    어제 관객수
+                </div>
+
+                <div class="metric-value">
+                    {format_number(first_movie["관객수"])}명
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+    with m2:
+
+        st.markdown(
+            f"""
+            <div class="metric-card">
+
+                <div class="metric-icon">
+                    🎟️
+                </div>
+
+                <div class="metric-label">
+                    누적 관객수
+                </div>
+
+                <div class="metric-value">
+                    {format_number(first_movie["누적관객"])}명
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+    with m3:
+
+        st.markdown(
+            f"""
+            <div class="metric-card">
+
+                <div class="metric-icon">
+                    🎬
+                </div>
+
+                <div class="metric-label">
+                    스크린수
+                </div>
+
+                <div class="metric-value">
+                    {format_number(first_movie["스크린수"])}개
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+    # --------------------------------------------------------
+    # 1위 영화 토마토 평점
+    # --------------------------------------------------------
+
+    if first_rating is not None:
+
+        tomato_text = tomato_display(
+            first_rating
+        )
+
+        st.markdown(
+            f"""
+            <div class="tomato-card">
+
+                <div class="tomato-label">
+                    🍅 MY TOMATO RATING
+                </div>
+
+                <div class="tomato-icons">
+                    {tomato_text}
+                </div>
+
+                <div class="tomato-score">
+                    내가 남긴 평점 ·
+                    {first_rating:.1f} / 5.0
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+    else:
+
+        st.markdown(
+            """
+            <div class="tomato-card">
+
+                <div class="tomato-label">
+                    🍅 MY TOMATO RATING
+                </div>
+
+                <div class="tomato-icons">
+                    🤍🤍🤍🤍🤍
+                </div>
+
+                <div class="tomato-score">
+                    아직 내가 평가하지 않은 영화
+                </div>
+
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+
+# ============================================================
+# 오른쪽 : TOP 5 그래프
+# ============================================================
+
+with right_col:
+
+    st.markdown(
+        """
+        <div class="film-frame">
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <div class="section-title">
+            📊 관객수 TOP 5
+            <span class="section-line"></span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    top5 = df.head(5).copy()
+
+
+    # 긴 영화 제목 때문에 그래프가 깨지지 않도록
+    # 적당한 길이로 줄입니다.
+
+    chart_names = []
+
+    for name in top5["영화명"]:
+
+        if len(name) > 12:
+
+            chart_names.append(
+                name[:12] + "…"
+            )
+
+        else:
+
+            chart_names.append(name)
+
+
+    # Plotly 막대그래프
+    # 영화관 분위기에 맞춰 어두운 배경과 금색 계열을 사용합니다.
+
+    fig = go.Figure()
+
+
+    fig.add_trace(
+        go.Bar(
+            x=chart_names,
+            y=top5["관객수"],
+            text=[
+                f"{format_number(x)}명"
+                for x in top5["관객수"]
+            ],
+            textposition="outside",
+            marker=dict(
+                color=[
+                    "#d95b5b",
+                    "#d77b67",
+                    "#b88bc4",
+                    "#849dd4",
+                    "#7196bd"
+                ]
+            )
+        )
+    )
+
+
+    fig.update_layout(
+
+        height=370,
+
+        margin=dict(
+            l=10,
+            r=10,
+            t=35,
+            b=10
+        ),
+
+        paper_bgcolor="rgba(0,0,0,0)",
+
+        plot_bgcolor="rgba(0,0,0,0)",
+
+        font=dict(
+            color="#e8dfd0"
+        ),
+
+        xaxis=dict(
+
+            showgrid=False,
+
+            tickfont=dict(
+                size=11
+            )
+        ),
+
+        yaxis=dict(
+
+            showgrid=True,
+
+            gridcolor="rgba(255,255,255,0.08)",
+
+            zeroline=False,
+
+            tickformat=","
+        ),
+
+        showlegend=False
+    )
+
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displayModeBar": False
+        }
+    )
+
+
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+
+# ============================================================
+# 21. 흥행 온도
+# ============================================================
+# TOP 5가 전체 관객 중 어느 정도를 차지하는지 계산합니다.
+#
+# 이것은 공식 KOBIS 지표가 아니라
+# 이 앱에서 보여주는 간단한 참고용 지표입니다.
+
+total_audience = df["관객수"].sum()
+
+top5_audience = top5["관객수"].sum()
+
+
+if total_audience > 0:
+
+    top5_ratio = (
+        top5_audience
+        / total_audience
+        * 100
+    )
+
+else:
+
+    top5_ratio = 0
+
+
+if top5_ratio >= 80:
+
+    heat_text = "🔥 뜨거운 흥행 집중"
+
+elif top5_ratio >= 60:
+
+    heat_text = "🌡️ 높은 흥행 집중"
+
+elif top5_ratio >= 40:
+
+    heat_text = "🎞️ 적당한 흥행 집중"
+
+else:
+
+    heat_text = "❄️ 관객 분산"
+
+
+# ============================================================
+# 22. 1위 스크린당 관객수
+# ============================================================
+
+if first_movie["스크린수"] > 0:
+
+    audience_per_screen = (
+        first_movie["관객수"]
+        / first_movie["스크린수"]
+    )
+
+else:
+
+    audience_per_screen = 0
+
+
+heat_col, screen_col = st.columns(2)
+
+
+with heat_col:
+
+    st.markdown(
+        f"""
+        <div class="heat-card">
+
+            <div class="heat-label">
+                🍿 BOX OFFICE HEAT
+            </div>
+
+            <div class="heat-value">
+                {heat_text}
+            </div>
+
+            <div class="heat-text">
+                TOP 5 영화가 전체 박스오피스 관객의
+                <b>{top5_ratio:.1f}%</b>를 차지하고 있습니다.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+with screen_col:
+
+    st.markdown(
+        f"""
+        <div class="heat-card">
+
+            <div class="heat-label">
+                🎟️ SCREEN EFFICIENCY
+            </div>
+
+            <div class="heat-value">
+                {format_number(round(audience_per_screen))}명
+            </div>
+
+            <div class="heat-text">
+                현재 1위 영화의
+                <b>스크린 1개당 일일 관객수</b>입니다.
+                <br>
+                관객수 ÷ 스크린수로 계산했습니다.
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# ============================================================
+# 23. 토마토 평점 입력 영역
+# ============================================================
+
+st.markdown(
+    """
+    <div class="section-title">
+
+        🍅 나만의 토마토 평점
+
+        <span class="section-line"></span>
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+st.info(
+    "🍅 KOBIS 일일 박스오피스 API에는 영화 평점 데이터가 없기 때문에 "
+    "이 평점은 실제 Rotten Tomatoes 평점이 아니라 이 앱에서 직접 남기는 개인 평점입니다."
+)
+
+
+rating_col1, rating_col2 = st.columns(
+    [1, 1]
+)
+
+
+with rating_col1:
+
+    selected_movie = st.selectbox(
+        "평가할 영화를 선택하세요.",
+        df["영화명"].tolist(),
+        key="rating_movie"
+    )
+
+
+with rating_col2:
+
+    rating_labels = [
+        "평점 없음",
+        "🍅 0.5",
+        "🍅 1.0",
+        "🍅 1.5",
+        "🍅 2.0",
+        "🍅 2.5",
+        "🍅 3.0",
+        "🍅 3.5",
+        "🍅 4.0",
+        "🍅 4.5",
+        "🍅 5.0"
+    ]
+
+
+    current_rating = st.session_state.tomato_ratings.get(
+        selected_movie,
+        None
+    )
+
+
+    if current_rating is None:
+
+        default_index = 0
+
+    else:
+
+        default_index = int(
+            current_rating * 2
+        )
+
+
+        # 0.5 → 1번째
+        # 1.0 → 2번째
+        # ...
+        # 5.0 → 10번째
+
+        default_index += 0
+
+
+    selected_label = st.selectbox(
+        "토마토 평점",
+        rating_labels,
+        index=default_index,
+        key="rating_value"
+    )
+
+
+# 선택된 평점을 숫자로 변환
+
+if selected_label == "평점 없음":
+
+    new_rating = None
+
+else:
+
+    new_rating = float(
+        selected_label
+        .replace("🍅", "")
+        .strip()
+    )
+
+
+# 평점 저장
+
+if new_rating is None:
+
+    if selected_movie in st.session_state.tomato_ratings:
+
+        del st.session_state.tomato_ratings[
+            selected_movie
+        ]
+
+else:
+
+    st.session_state.tomato_ratings[
+        selected_movie
+    ] = new_rating
+
+
+# 현재 선택 영화의 평점 표시
+
+current_rating = st.session_state.tomato_ratings.get(
+    selected_movie,
+    None
+)
+
+
+if current_rating is not None:
+
+    st.markdown(
+        f"""
+        <div class="tomato-card">
+
+            <div class="tomato-label">
+                MY TOMATO RATING
+            </div>
+
+            <div class="tomato-icons">
+                {tomato_display(current_rating)}
+            </div>
+
+            <div class="tomato-score">
+                <b>{html.escape(selected_movie)}</b>
+                · {current_rating:.1f} / 5.0
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+else:
+
+    st.caption(
+        "아직 이 영화에 토마토 평점을 남기지 않았습니다."
+    )
+
+
+# ============================================================
+# 24. 영화 검색
+# ============================================================
+
+st.markdown(
+    """
+    <div class="section-title">
+
+        🔎 영화 검색
+
+        <span class="section-line"></span>
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+search_text = st.text_input(
+    "영화명을 검색하세요.",
+    placeholder="예: 아바타, 미션, 좀비...",
+    key="movie_search"
+)
+
+
+# 검색어가 있으면 영화 목록을 필터링
+
+if search_text.strip():
+
+    filtered_df = df[
+        df["영화명"].str.contains(
+            search_text.strip(),
+            case=False,
+            na=False
+        )
+    ].copy()
+
+else:
+
+    filtered_df = df.copy()
+
+
+# ============================================================
+# 25. 전체 박스오피스 표
+# ============================================================
+
+st.markdown(
+    """
+    <div class="section-title">
+
+        🎞️ 전체 박스오피스
+
+        <span class="section-line"></span>
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# 표시용 데이터프레임을 따로 만듭니다.
+# 원본 df는 숫자 계산을 위해 그대로 유지합니다.
+
+display_df = filtered_df.copy()
+
+
+# ------------------------------------------------------------
+# 순위 변동
+# ------------------------------------------------------------
+
+display_df["순위 변동"] = display_df[
+    "순위변동"
+].apply(rank_change)
+
+
+# ------------------------------------------------------------
+# 토마토 평점
+# ------------------------------------------------------------
+
+display_df["🍅 토마토"] = display_df[
+    "영화명"
+].apply(
+    lambda movie:
+        tomato_display(
+            st.session_state.tomato_ratings.get(
+                movie,
+                None
+            )
+        )
+)
+
+
+# ------------------------------------------------------------
+# 숫자에 천 단위 쉼표 적용
+# ------------------------------------------------------------
+
+display_df["관객수"] = display_df[
+    "관객수"
+].apply(format_number)
+
+
+display_df["누적관객"] = display_df[
+    "누적관객"
+].apply(format_number)
+
+
+display_df["스크린수"] = display_df[
+    "스크린수"
+].apply(format_number)
+
+
+# ------------------------------------------------------------
+# 필요한 열만 선택
+# ------------------------------------------------------------
+
+display_df = display_df[
+    [
+        "순위",
+        "순위 변동",
+        "영화명",
+        "🍅 토마토",
+        "개봉일",
+        "관객수",
+        "누적관객",
+        "스크린수"
+    ]
+]
+
+
+# ------------------------------------------------------------
+# 검색 결과가 없는 경우
+# ------------------------------------------------------------
+
+if display_df.empty:
+
+    st.warning(
+        f"🔎 '{search_text}'와 일치하는 영화가 없습니다."
+    )
+
+else:
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        height=520
+    )
+
+
+# ============================================================
+# 26. 영화 티켓
+# ============================================================
+
+st.markdown(
+    f"""
+    <div class="ticket">
+
+        <div class="ticket-small">
+            CINEMA TICKET · KOBIS DAILY BOX OFFICE
+        </div>
+
+        <div class="ticket-title">
+            🎟️ {display_date}
+        </div>
+
+        <div class="ticket-text">
+
+            오늘의 상영 정보는
+            <b>어제의 실제 박스오피스 데이터</b>를 기준으로 합니다.
+
+            <br>
+
+            조회일 · {display_date}
+
+            <br>
+
+            데이터 · 영화관입장권통합전산망(KOBIS)
+
+        </div>
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# 27. 데이터 안내
+# ============================================================
+
+st.markdown(
+    """
+    <div style="
+        margin-top:25px;
+        padding:18px;
+        border:1px solid #403522;
+        border-radius:10px;
+        background:rgba(255,255,255,0.015);
+        color:#9f9689;
+        font-size:12px;
+        line-height:1.8;
+    ">
+
+        🎬 <b>KOBIS 데이터 안내</b><br>
+
+        순위 · 영화명 · 개봉일 · 관객수 · 누적관객수 ·
+        스크린수는 KOBIS 일일 박스오피스 API에서 가져옵니다.
+
+        <br><br>
+
+        🍅 토마토 평점은 KOBIS에서 제공하는 공식 평점이 아니며,
+        사용자가 직접 입력한 개인 평점입니다.
+
+        <br>
+
+        🍿 흥행 온도와 스크린당 관객수는
+        KOBIS 데이터를 이용해 이 앱에서 계산한 참고용 지표입니다.
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# 28. 하단 필름 스트립
+# ============================================================
+
+st.markdown(
+    """
+    <div class="film-strip">
+
+        🎞️　오늘, 어떤 영화를 보시겠어요?　🍿　🎬
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
